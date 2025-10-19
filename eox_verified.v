@@ -1091,11 +1091,59 @@ Section Discrete.
 
 Context (P : EOX_Params).
 
-Variable A_N : nat -> R.
-Hypothesis A_N_nondec : forall n m, (n <= m)%nat -> A_N n <= A_N m.
-Hypothesis A_N_nonneg : forall n, 0 <= A_N n.
-Hypothesis A_N_zero : A_N 0%nat = 0.
-Hypothesis A_N_div_sum : forall M, exists N, A_N N >= M.
+Hypothesis A_sum_zero : A_sum P 0 = 0.
+
+Hypothesis A_sum_subadditive : forall x y,
+  0 <= x -> 0 <= y -> A_sum P (x + y) - A_sum P x <= A_sum P y.
+
+Definition A_N (n : nat) : R := A_sum P (INR n).
+
+Lemma A_N_nondec : forall n m, (n <= m)%nat -> A_N n <= A_N m.
+Proof.
+  intros n m Hnm.
+  unfold A_N.
+  apply A_sum_nondecreasing.
+  apply le_INR.
+  assumption.
+Qed.
+
+Lemma A_N_nonneg : forall n, 0 <= A_N n.
+Proof.
+  intro n.
+  unfold A_N.
+  apply A_sum_nonneg.
+  apply pos_INR.
+Qed.
+
+Lemma A_N_zero : A_N 0%nat = 0.
+Proof.
+  unfold A_N.
+  simpl.
+  apply A_sum_zero.
+Qed.
+
+Lemma A_N_div_sum : forall M, exists N, A_N N >= M.
+Proof.
+  intro M.
+  destruct (A_sum_unbounded P M) as [h [Hh HA]].
+  exists (Z.to_nat (up h) + 1)%nat.
+  unfold A_N.
+  apply Rle_ge.
+  apply Rle_trans with (r2 := A_sum P h).
+  - apply Rge_le. assumption.
+  - apply A_sum_nondecreasing.
+    rewrite plus_INR. simpl INR at 2.
+    assert (Hup : IZR (up h) > h) by apply archimed.
+    assert (Hup_pos : (0 <= up h)%Z).
+    { destruct (Z_le_gt_dec 0 (up h)) as [Hle | Hgt]; [assumption |].
+      assert (Hh_neg : h < 0).
+      { apply Rle_lt_trans with (r2 := IZR (up h)); [| apply IZR_lt; lia].
+        apply Rlt_le. assumption. }
+      lra. }
+    rewrite INR_IZR_INZ.
+    rewrite Z2Nat.id by assumption.
+    lra.
+Qed.
 
 Definition Delta_A (n : nat) : R := A_N (S n) - A_N n.
 
@@ -1588,6 +1636,69 @@ Proof.
   - exact Hg_bound.
   - exact Hg_mono.
 Qed.
+
+(** *** Discrete-Continuous Bridge: Connecting A_N to A_sum *)
+
+Hypothesis A_sum_unit_bounded : A_sum P 1 <= 1.
+
+Theorem A_N_approximates_A_sum :
+  forall h, h >= 1 -> exists N, (N > 0)%nat /\
+    Rabs (A_N N - A_sum P h) <= 2 * A_sum P 1.
+Proof.
+  intros h Hh.
+  pose (N := Z.to_nat (up h)).
+  assert (HN_pos : (N > 0)%nat).
+  { unfold N. assert (Hup : IZR (up h) > h) by apply archimed.
+    assert (Hh_pos : h > 0) by lra.
+    assert (Hup_pos : (0 < up h)%Z).
+    { destruct (Z_lt_le_dec 0 (up h)) as [Hlt | Hle]; [assumption |].
+      exfalso.
+      assert (Hup_val : IZR (up h) <= IZR 0) by (apply IZR_le; assumption).
+      simpl in Hup_val. lra. }
+    lia. }
+  exists N. split; [assumption |].
+  unfold A_N, N.
+  assert (Hup_bound : IZR (up h) > h) by apply archimed.
+  assert (Hup_pos : (0 < up h)%Z).
+  { destruct (Z_lt_le_dec 0 (up h)) as [Hlt | Hle]; [assumption |].
+    exfalso.
+    assert (Hup_val : IZR (up h) <= IZR 0) by (apply IZR_le; assumption).
+    simpl in Hup_val. lra. }
+  assert (HN_val : INR (Z.to_nat (up h)) = IZR (up h)) by (rewrite INR_IZR_INZ; rewrite Z2Nat.id by lia; reflexivity).
+  rewrite HN_val.
+  assert (Harch : h < IZR (up h) <= h + 1) by (destruct (archimed h) as [Hub Hlb]; split; lra).
+  assert (HA_mono : A_sum P h <= A_sum P (IZR (up h))) by (apply A_sum_nondecreasing; lra).
+  rewrite Rabs_right by (apply Rle_ge; lra).
+  destruct Harch as [Hlb Hub].
+  assert (Hdiff : A_sum P (IZR (up h)) - A_sum P h <= 2 * A_sum P 1).
+  { assert (Hle_h1 : A_sum P (IZR (up h)) - A_sum P h <= A_sum P (h + 1) - A_sum P (h - 1)).
+    { assert (Hmono_up : A_sum P (IZR (up h)) <= A_sum P (h + 1)) by (apply A_sum_nondecreasing; lra).
+      assert (Hmono_down : A_sum P (h - 1) <= A_sum P h) by (apply A_sum_nondecreasing; lra).
+      lra. }
+    apply Rle_trans with (r2 := A_sum P (h + 1) - A_sum P (h - 1)).
+    - assumption.
+    - replace (h + 1) with ((h - 1) + 2) by ring.
+      assert (HA_2step : A_sum P ((h - 1) + 2) - A_sum P (h - 1) <= 2 * A_sum P 1).
+      { replace ((h - 1) + 2) with ((h - 1) + 1 + 1) by ring.
+        assert (Hincr1 : A_sum P ((h - 1) + 1) - A_sum P (h - 1) <= A_sum P 1).
+        { assert (Hh1_nonneg : 0 <= h - 1) by lra.
+          assert (H1_nonneg : 0 <= 1) by lra.
+          exact (@A_sum_subadditive (h - 1) 1 Hh1_nonneg H1_nonneg). }
+        assert (Hincr2 : A_sum P ((h - 1) + 1 + 1) - A_sum P ((h - 1) + 1) <= A_sum P 1).
+        { assert (Hh1p1_nonneg : 0 <= (h - 1) + 1) by lra.
+          assert (H1_nonneg : 0 <= 1) by lra.
+          exact (@A_sum_subadditive ((h - 1) + 1) 1 Hh1p1_nonneg H1_nonneg). }
+        assert (Hsum : A_sum P ((h - 1) + 1 + 1) - A_sum P (h - 1) =
+                       (A_sum P ((h - 1) + 1) - A_sum P (h - 1)) +
+                       (A_sum P ((h - 1) + 1 + 1) - A_sum P ((h - 1) + 1))) by ring.
+        rewrite Hsum.
+        assert (H2times : 2 * A_sum P 1 = A_sum P 1 + A_sum P 1) by ring.
+        rewrite H2times.
+        apply Rplus_le_compat; assumption. }
+      assumption. }
+  assumption.
+Qed.
+
 
 End Discrete.
 
@@ -2683,6 +2794,107 @@ Definition fitness_advantage (h : R) (a1 a2 : A P) : R :=
 
 Definition strictly_dominates_in_population (h : R) (a_dominant a_other : A P) : Prop :=
   fitness_advantage h a_dominant a_other > 0.
+
+Theorem null_exposure_evolutionarily_stable : forall a h,
+  0 <= h ->
+  C P (proj1_sig (A0 P)) <= C P a ->
+  T P a > 0 ->
+  exists H, 0 <= H /\ forall h', H <= h' ->
+    strictly_dominates_in_population h' (proj1_sig (A0 P)) a.
+Proof.
+  intros a h Hh HC HTa.
+  pose proof (EOX_asymptotic_null_dominance_pointwise P a HC) as Hdom.
+  destruct Hdom as [[HT_zero HC_eq] | [H [HH_nonneg Hforall]]].
+  - exfalso. lra.
+  - exists H. split; [assumption |].
+    intros h' Hh'.
+    unfold strictly_dominates_in_population, fitness_advantage.
+    assert (Hstrict : payoff P h' (proj1_sig (A0 P)) > payoff P h' a).
+    { apply Hforall. assumption. }
+    lra.
+Qed.
+
+Definition evolutionarily_stable_strategy (a : A P) : Prop :=
+  forall a', C P (proj1_sig (A0 P)) <= C P a' ->
+    (T P a' = 0 /\ C P (proj1_sig (A0 P)) = C P a') \/
+    exists H, 0 <= H /\ forall h, H <= h ->
+      strictly_dominates_in_population h a a'.
+
+Theorem null_exposure_is_ESS : evolutionarily_stable_strategy (proj1_sig (A0 P)).
+Proof.
+  unfold evolutionarily_stable_strategy.
+  intros a' HC.
+  pose proof (EOX_asymptotic_null_dominance_pointwise P a' HC) as Hdom.
+  destruct Hdom as [[HT_zero HC_eq] | [H [HH_nonneg Hforall]]].
+  - left. split; assumption.
+  - right. exists H. split; [assumption |].
+    intros h Hh.
+    unfold strictly_dominates_in_population, fitness_advantage.
+    assert (Hstrict : payoff P h (proj1_sig (A0 P)) > payoff P h a').
+    { apply Hforall. assumption. }
+    lra.
+Qed.
+
+Definition mutant_invasion_fitness (h : R) (a_mutant : A P) : R :=
+  payoff P h a_mutant - payoff P h (proj1_sig (A0 P)).
+
+Theorem exposure_mutants_cannot_invade : forall a,
+  C P (proj1_sig (A0 P)) <= C P a ->
+  T P a > 0 ->
+  exists H, 0 <= H /\ forall h, H <= h ->
+    mutant_invasion_fitness h a < 0.
+Proof.
+  intros a HC HTa.
+  pose proof (EOX_asymptotic_null_dominance_pointwise P a HC) as Hdom.
+  destruct Hdom as [[HT_zero HC_eq] | [H [HH_nonneg Hforall]]].
+  - exfalso. lra.
+  - exists H. split; [assumption |].
+    intros h Hh.
+    unfold mutant_invasion_fitness.
+    assert (Hstrict : payoff P h (proj1_sig (A0 P)) > payoff P h a).
+    { apply Hforall. assumption. }
+    lra.
+Qed.
+
+Theorem extinction_inevitability : forall a,
+  C P (proj1_sig (A0 P)) <= C P a ->
+  T P a > 0 ->
+  is_lim (fun h => mutant_invasion_fitness h a) p_infty (- (V P - C P (proj1_sig (A0 P)) + C P a)).
+Proof.
+  intros a HC HTa.
+  unfold mutant_invasion_fitness.
+  assert (H_null_constant : forall h, 0 <= h ->
+    payoff P h (proj1_sig (A0 P)) = V P - C P (proj1_sig (A0 P))).
+  { intros h Hh. apply EOX_payoff_null_exposure_constant. assumption. }
+  assert (H_a_limit : is_lim (fun h => payoff P h a) p_infty (- C P a)).
+  { apply EOX_payoff_limit_pos_exposure. assumption. }
+  unfold is_lim, filterlim, filter_le, filtermap in *.
+  intros Q HQ.
+  destruct HQ as [eps Heps].
+  unfold is_lim, filterlim, filter_le, filtermap in H_a_limit.
+  assert (H_ball : locally (- C P a) (ball (- C P a) eps)).
+  { exists eps. intros y Hy. exact Hy. }
+  specialize (H_a_limit (ball (- C P a) eps) H_ball).
+  destruct H_a_limit as [M HM].
+  exists (Rmax M 0).
+  intros h Hh.
+  apply Heps.
+  unfold ball, AbsRing_ball, abs, minus, plus, opp. simpl.
+  assert (Hh_nonneg : 0 <= h).
+  { apply Rle_trans with (r2 := Rmax M 0).
+    - unfold Rmax. destruct (Rle_dec M 0); lra.
+    - apply Rlt_le. assumption. }
+  assert (Hh_M : M < h).
+  { unfold Rmax in Hh. destruct (Rle_dec M 0) in Hh; lra. }
+  rewrite H_null_constant by assumption.
+  specialize (HM h Hh_M).
+  unfold ball, AbsRing_ball, abs, minus, plus, opp in HM. simpl in HM.
+  assert (Hgoal : Rabs (payoff P h a - (V P - C P (proj1_sig (A0 P))) - (- (V P - C P (proj1_sig (A0 P)) + C P a))) < eps).
+  { replace (payoff P h a - (V P - C P (proj1_sig (A0 P))) - (- (V P - C P (proj1_sig (A0 P)) + C P a)))
+      with (payoff P h a - (- C P a)) by ring.
+    exact HM. }
+  exact Hgoal.
+Qed.
 
 End EvolutionaryStability.
 
